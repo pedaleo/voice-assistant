@@ -31,10 +31,12 @@ Alt+Z (habla) → Handy (STT) → voice-toggle.sh → assistant.py → Kiro CLI 
 ### 1. Clonar este repo
 
 ```bash
-git clone https://github.com/pedaleo/voice-assistant.git ~/scripts/voice-assistant
-chmod +x ~/scripts/voice-assistant/assistant.py
-chmod +x ~/scripts/voice-assistant/voice-toggle.sh
+git clone https://github.com/pedaleo/voice-assistant.git
+cd voice-assistant
+chmod +x assistant.py voice-toggle.sh
 ```
+
+Clónalo donde prefieras (e.g. `~/Projects/`). Los scripts se auto-referencian, no dependen de una ruta fija.
 
 ### 2. Instalar Handy
 
@@ -81,7 +83,12 @@ Otros modelos de voz disponibles en: https://huggingface.co/rhasspy/piper-voices
 Añade a `~/.config/hypr/bindings.conf`:
 
 ```
-bindd = ALT, Z, Voice assistant, exec, ~/scripts/voice-assistant/voice-toggle.sh
+bindd = ALT, Z, Voice assistant, exec, /ruta/donde/clonaste/voice-assistant/voice-toggle.sh
+```
+
+Por ejemplo, si clonaste en `~/Projects/`:
+```
+bindd = ALT, Z, Voice assistant, exec, ~/Projects/voice-assistant/voice-toggle.sh
 ```
 
 Hyprland recarga automáticamente al guardar.

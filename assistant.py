@@ -28,7 +28,7 @@ CONFIG = {
 
     # TTS config: "piper" o "espeak"
     "tts_backend": "piper",
-    "piper_model": str(Path.home() / ".local/share/piper/es_ES-davefx-medium.onnx"),
+    "piper_model": str(Path.home() / ".local/share/piper/es_MX-claude-high.onnx"),
 
     # System prompt (para ollama/api)
     "system_prompt": "Eres un asistente de voz conciso. Responde en español, de forma breve y directa. No uses markdown ni formato especial.",
@@ -51,7 +51,7 @@ def query_kiro(text: str) -> str:
     result = subprocess.run(
         ["kiro-cli", "chat", "--no-interactive", "--resume", "--trust-all-tools", "--wrap=never", prompt],
         capture_output=True, text=True, timeout=60,
-        cwd=Path.home() / "scripts" / "voice-assistant"
+        cwd=Path(__file__).resolve().parent
     )
     # Limpiar códigos ANSI de la salida
     output = re.sub(r'\x1b\[[0-9;]*m', '', result.stdout).strip()

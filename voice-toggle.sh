@@ -41,7 +41,8 @@ conn.close()
 
     if [ -n "$TEXT" ] && [ "$CURRENT_ID" != "$BEFORE_ID" ]; then
         notify-send "🎙️ Asistente" "Procesando: $TEXT"
-        python3 ~/scripts/voice-assistant/assistant.py "$TEXT"
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+        python3 "$SCRIPT_DIR/assistant.py" "$TEXT"
     else
         notify-send "🎙️ Asistente" "No se detectó transcripción nueva"
     fi
