@@ -37,7 +37,7 @@ CONFIG = {
 # ─── LLM ─────────────────────────────────────────────────────────────────────
 
 def query_kiro(text: str) -> str:
-    """Usa Kiro CLI como backend LLM."""
+    """Usa Kiro CLI como backend LLM con sesión persistente."""
     prompt = (
         "Responde de forma breve y concisa, en español, sin markdown ni formato. "
         "Contexto: el usuario usa Omarchy Linux con Hyprland. "
@@ -47,9 +47,11 @@ def query_kiro(text: str) -> str:
         "Para cambiar tema usa: omarchy-theme-set \"nombre\". "
         "La pregunta del usuario (puede tener errores de transcripción de voz): " + text
     )
+    # Usar --resume para mantener contexto entre preguntas
     result = subprocess.run(
-        ["kiro-cli", "chat", "--no-interactive", "--trust-all-tools", "--wrap=never", prompt],
-        capture_output=True, text=True, timeout=60
+        ["kiro-cli", "chat", "--no-interactive", "--resume", "--trust-all-tools", "--wrap=never", prompt],
+        capture_output=True, text=True, timeout=60,
+        cwd=Path.home() / "scripts" / "voice-assistant"
     )
     # Limpiar códigos ANSI de la salida
     output = re.sub(r'\x1b\[[0-9;]*m', '', result.stdout).strip()
