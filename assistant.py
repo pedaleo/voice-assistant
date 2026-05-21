@@ -31,7 +31,7 @@ CONFIG = {
     "piper_model": str(Path.home() / ".local/share/piper/es_MX-claude-high.onnx"),
 
     # System prompt (para ollama/api)
-    "system_prompt": "Eres un asistente de voz conciso. Responde en español, de forma breve y directa. No uses markdown ni formato especial.",
+    "system_prompt": "Eres un asistente de voz. Tu respuesta se lee en voz alta. Máximo 2 frases. Responde en español conversacional. Nunca deletrees rutas, comandos, URLs ni salidas técnicas. Resume todo en lenguaje natural.",
 }
 
 # ─── LLM ─────────────────────────────────────────────────────────────────────
@@ -39,7 +39,10 @@ CONFIG = {
 def query_kiro(text: str) -> str:
     """Usa Kiro CLI como backend LLM con sesión persistente."""
     prompt = (
-        "Responde de forma breve y concisa, en español, sin markdown ni formato. "
+        "Tu respuesta se va a leer en voz alta con TTS. REGLAS ESTRICTAS: "
+        "Máximo 2 frases. Responde como si hablaras, nunca deletrees rutas, comandos, URLs ni salidas de terminal. "
+        "Si ejecutas un comando, resume el resultado en lenguaje natural (ejemplo: 'Tienes 50 gigas libres' en vez de mostrar la tabla de df). "
+        "No uses markdown, listas, ni formato. Solo texto plano conversacional en español. "
         "Contexto: el usuario usa Omarchy Linux con Hyprland. "
         "Temas disponibles: Aether, Catppuccin, Catppuccin Latte, Ethereal, Everforest, "
         "Flexoki Light, Gruvbox, Hackerman, Kanagawa, Lumon, Matte Black, Miasma, Nord, "
@@ -55,9 +58,9 @@ def query_kiro(text: str) -> str:
     )
     # Limpiar códigos ANSI de la salida
     output = re.sub(r'\x1b\[[0-9;]*m', '', result.stdout).strip()
-    # Quitar el prefijo "> " que añade kiro
-    output = re.sub(r'^>\s*', '', output, flags=re.MULTILINE).strip()
-    return output
+    # Extraer solo las líneas de respuesta final (prefijo "> ")
+    response_lines = [line.lstrip("> ").strip() for line in output.splitlines() if line.strip().startswith(">")]
+    return " ".join(response_lines).strip() if response_lines else output.splitlines()[-1].strip() if output else ""
 
 
 def query_ollama(text: str) -> str:
