@@ -80,16 +80,13 @@ Otros modelos de voz disponibles en: https://huggingface.co/rhasspy/piper-voices
 
 ### 6. Añadir atajo de teclado
 
-Añade a `~/.config/hypr/bindings.conf`:
+Añade a `~/.config/hypr/bindings.conf` la ruta **absoluta** donde clonaste el repo:
 
 ```
-bindd = ALT, Z, Voice assistant, exec, /ruta/donde/clonaste/voice-assistant/voice-toggle.sh
+bindd = ALT, Z, Voice assistant, exec, ~/Projects/personal/voice-assistant/voice-toggle.sh
 ```
 
-Por ejemplo, si clonaste en `~/Projects/`:
-```
-bindd = ALT, Z, Voice assistant, exec, ~/Projects/voice-assistant/voice-toggle.sh
-```
+> ⚠️ La ruta debe coincidir exactamente con la ubicación del repo clonado. Si lo tienes en otro sitio, ajústala.
 
 Hyprland recarga automáticamente al guardar.
 
