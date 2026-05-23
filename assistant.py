@@ -8,6 +8,7 @@ import sys
 import json
 import subprocess
 import re
+import time
 import urllib.request
 from pathlib import Path
 
@@ -26,9 +27,10 @@ CONFIG = {
     "api_key": "",
     "api_model": "openai/gpt-4o-mini",
 
-    # TTS config: "piper" o "espeak"
-    "tts_backend": "piper",
-    "piper_model": str(Path.home() / ".local/share/piper/es_MX-claude-high.onnx"),
+    # TTS config: "piper", "espeak" o "edge"
+    "tts_backend": "edge",
+    "piper_model": str(Path.home() / ".local/share/piper/kristin.onnx"),
+    "edge_voice": "es-MX-DaliaNeural",
 
     # System prompt (para ollama/api)
     "system_prompt": "Eres un asistente de voz. Tu respuesta se lee en voz alta. Máximo 2 frases. Responde en español conversacional. Nunca deletrees rutas, comandos, URLs ni salidas técnicas. Resume todo en lenguaje natural.",
@@ -36,12 +38,53 @@ CONFIG = {
 
 # ─── LLM ─────────────────────────────────────────────────────────────────────
 
+SESSION_FILE = Path("/tmp/voice_assistant_session")
+SESSION_TIMEOUT = 600  # 10 minutos sin actividad = sesión nueva
+
+RESET_PHRASES = ["olvida todo", "reset", "nueva conversación", "empieza de cero", "borra el contexto"]
+
+
+def should_reset_session(text: str) -> bool:
+    """Comprueba si el usuario pide reset o si la sesión ha expirado."""
+    lower = text.lower().strip()
+    if any(phrase in lower for phrase in RESET_PHRASES):
+        return True
+    if SESSION_FILE.exists():
+        last_used = SESSION_FILE.stat().st_mtime
+        if time.time() - last_used > SESSION_TIMEOUT:
+            return True
+    return False
+
+
+def reset_session():
+    """Elimina las sesiones de Kiro CLI del asistente para empezar de cero."""
+    SESSION_FILE.unlink(missing_ok=True)
+    cwd = Path(__file__).resolve().parent
+    # Listar sesiones y borrarlas
+    result = subprocess.run(
+        ["kiro-cli", "chat", "--list-sessions"],
+        capture_output=True, text=True, cwd=cwd
+    )
+    for sid in re.findall(r'SessionId:\s*\x1b\[[\d;]*m([a-f0-9-]+)', result.stdout):
+        subprocess.run(
+            ["kiro-cli", "chat", "--delete-session", sid],
+            capture_output=True, cwd=cwd
+        )
+
+
+def touch_session():
+    """Actualiza el timestamp de la sesión."""
+    SESSION_FILE.touch()
+
+
 def query_kiro(text: str) -> str:
     """Usa Kiro CLI como backend LLM con sesión persistente."""
     prompt = (
         "Tu respuesta se va a leer en voz alta con TTS. REGLAS ESTRICTAS: "
-        "Máximo 2 frases. Responde como si hablaras, nunca deletrees rutas, comandos, URLs ni salidas de terminal. "
-        "Si ejecutas un comando, resume el resultado en lenguaje natural (ejemplo: 'Tienes 50 gigas libres' en vez de mostrar la tabla de df). "
+        "Máximo 3 frases. Responde con personalidad, como un amigo listo que te echa una mano. "
+        "Sé cercano, usa expresiones naturales y algo de humor cuando encaje. "
+        "Nunca deletrees rutas, comandos, URLs ni salidas de terminal. "
+        "Si ejecutas un comando, resume el resultado en lenguaje natural. "
         "No uses markdown, listas, ni formato. Solo texto plano conversacional en español. "
         "Contexto: el usuario usa Omarchy Linux con Hyprland. "
         "Temas disponibles: Aether, Catppuccin, Catppuccin Latte, Ethereal, Everforest, "
@@ -50,16 +93,31 @@ def query_kiro(text: str) -> str:
         "Para cambiar tema usa: omarchy-theme-set \"nombre\". "
         "La pregunta del usuario (puede tener errores de transcripción de voz): " + text
     )
-    # Usar --resume para mantener contexto entre preguntas
+    cmd = ["kiro-cli", "chat", "--no-interactive", "--resume", "--trust-all-tools", "--wrap=never"]
+    cmd.append(prompt)
+
     result = subprocess.run(
-        ["kiro-cli", "chat", "--no-interactive", "--resume", "--trust-all-tools", "--wrap=never", prompt],
-        capture_output=True, text=True, timeout=60,
+        cmd, capture_output=True, text=True, timeout=60,
         cwd=Path(__file__).resolve().parent
     )
+
     # Limpiar códigos ANSI de la salida
     output = re.sub(r'\x1b\[[0-9;]*m', '', result.stdout).strip()
-    # Extraer solo las líneas de respuesta final (prefijo "> ")
-    response_lines = [line.lstrip("> ").strip() for line in output.splitlines() if line.strip().startswith(">")]
+    # Extraer respuesta: empieza en la primera línea con "> " e incluye todo lo que sigue
+    lines = output.splitlines()
+    response_started = False
+    response_lines = []
+    for line in lines:
+        if line.strip().startswith(">"):
+            response_started = True
+            response_lines.append(line.lstrip("> ").strip())
+        elif response_started:
+            # Líneas de continuación (sin >) que son parte de la respuesta
+            stripped = line.strip()
+            if stripped and not stripped.startswith("▸") and not stripped.startswith("Time:"):
+                response_lines.append(stripped)
+            elif stripped.startswith("▸"):
+                break  # Fin de la respuesta, empieza el footer
     return " ".join(response_lines).strip() if response_lines else output.splitlines()[-1].strip() if output else ""
 
 
@@ -113,13 +171,25 @@ def speak_piper(text: str):
     subprocess.run(["mpv", "--no-terminal", wav], capture_output=True)
 
 
+def speak_edge(text: str):
+    """TTS con Edge TTS (Microsoft, alta calidad, requiere internet)."""
+    wav = "/tmp/voice_assistant_tts.wav"
+    subprocess.run(
+        ["edge-tts", "--voice", CONFIG["edge_voice"], "--text", text, "--write-media", wav],
+        capture_output=True
+    )
+    subprocess.run(["mpv", "--no-terminal", wav], capture_output=True)
+
+
 def speak_espeak(text: str):
     """Fallback con espeak."""
     subprocess.run(["espeak-ng", "-v", "es", text])
 
 
 def speak(text: str):
-    if CONFIG["tts_backend"] == "piper":
+    if CONFIG["tts_backend"] == "edge":
+        speak_edge(text)
+    elif CONFIG["tts_backend"] == "piper":
         speak_piper(text)
     else:
         speak_espeak(text)
@@ -135,8 +205,19 @@ def main():
     if not text.strip():
         sys.exit(0)
 
+    # Comprobar si hay que resetear sesión
+    if should_reset_session(text):
+        reset_session()
+        # Si fue un reset explícito, confirmar y salir
+        lower = text.lower().strip()
+        if any(phrase in lower for phrase in RESET_PHRASES):
+            speak("Listo, he olvidado todo. Empezamos de cero.")
+            touch_session()
+            sys.exit(0)
+
     try:
         response = query_llm(text)
+        touch_session()
         if response:
             speak(response)
         else:

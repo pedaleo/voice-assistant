@@ -7,7 +7,7 @@ Pulsa un atajo de teclado, habla, y el PC te responde con voz. Puede controlar t
 ## Arquitectura
 
 ```
-Alt+Z (habla) → Handy (STT) → voice-toggle.sh → assistant.py → Kiro CLI (LLM) → Piper (TTS) → Audio
+Alt+Z (habla) → Handy (STT) → voice-toggle.sh → assistant.py → Kiro CLI (LLM) → Edge TTS → Audio
 ```
 
 1. **Alt+Z** — Inicia/detiene la grabación de voz
@@ -15,14 +15,15 @@ Alt+Z (habla) → Handy (STT) → voice-toggle.sh → assistant.py → Kiro CLI 
 3. **voice-toggle.sh** — Lee la transcripción de la DB de Handy y la pasa al script
 4. **assistant.py** — Envía el texto al LLM y reproduce la respuesta con TTS
 5. **Kiro CLI** — Procesa la pregunta (puede ejecutar comandos, buscar en internet, etc.)
-6. **Piper TTS** — Convierte la respuesta a voz en español
+6. **Edge TTS** — Convierte la respuesta a voz (Microsoft, alta calidad)
 
 ## Requisitos
 
 - [Omarchy](https://omarchy.org/) (Arch Linux + Hyprland)
 - [Handy](https://github.com/pais-app/handy) (AppImage) — Speech-to-Text
 - [Kiro CLI](https://kiro.dev/) — LLM con acceso a herramientas
-- [Piper TTS](https://github.com/rhasspy/piper) — Text-to-Speech local
+- [Edge TTS](https://github.com/rany2/edge-tts) — Text-to-Speech (Microsoft, requiere internet)
+- [Piper TTS](https://github.com/rhasspy/piper) — Text-to-Speech local (alternativa offline)
 - mpv — Reproductor de audio
 - wl-paste — Para leer el portapapeles (incluido en wl-clipboard)
 
@@ -58,25 +59,33 @@ Sigue las instrucciones en [kiro.dev](https://kiro.dev/). Verifica que funciona:
 kiro-cli chat --no-interactive "Hola"
 ```
 
-### 4. Instalar Piper TTS
+### 4. Instalar Edge TTS
+
+```bash
+pip install edge-tts --break-system-packages
+```
+
+Verifica que funciona:
+
+```bash
+edge-tts --voice "es-MX-DaliaNeural" --text "Hola, soy tu asistente" --write-media /tmp/test.wav && mpv /tmp/test.wav
+```
+
+### 5. (Opcional) Instalar Piper TTS como fallback offline
 
 ```bash
 yay -S piper-tts
 ```
 
-Cuando pregunte por `python-onnxruntime`, elige `python-onnxruntime-cpu` (opción 1) a menos que tengas GPU NVIDIA/AMD.
-
-### 5. Descargar modelo de voz español
+Descarga un modelo de voz:
 
 ```bash
 mkdir -p ~/.local/share/piper
-curl -sL -o ~/.local/share/piper/es_ES-davefx-medium.onnx \
-  https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx
-curl -sL -o ~/.local/share/piper/es_ES-davefx-medium.onnx.json \
-  https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json
+curl -sL -o ~/.local/share/piper/kristin.onnx \
+  https://sfo3.digitaloceanspaces.com/bkmdls/kristin.onnx
+curl -sL -o ~/.local/share/piper/kristin.onnx.json \
+  https://sfo3.digitaloceanspaces.com/bkmdls/kristin.onnx.json
 ```
-
-Otros modelos de voz disponibles en: https://huggingface.co/rhasspy/piper-voices
 
 ### 6. Añadir atajo de teclado
 
@@ -103,6 +112,17 @@ Para que arranque con el sistema, Handy crea automáticamente un archivo en `~/.
 1. Pulsa **Alt+Z** — aparece notificación "Escuchando..."
 2. Habla tu pregunta
 3. Pulsa **Alt+Z** otra vez — procesa y responde con voz
+
+### Sesión y memoria
+
+El asistente mantiene contexto entre preguntas consecutivas (puedes hacer preguntas de seguimiento). La sesión se resetea automáticamente tras **10 minutos** de inactividad.
+
+Para resetear manualmente, di cualquiera de estas frases:
+- "Olvida todo"
+- "Reset"
+- "Nueva conversación"
+- "Empieza de cero"
+- "Borra el contexto"
 
 ### Ejemplos de cosas que puedes pedir
 
@@ -136,12 +156,31 @@ Edita `assistant.py` para cambiar el backend:
 ### Backend TTS
 
 ```python
-# Piper (por defecto) — buena calidad, local
+# Edge TTS (por defecto) — alta calidad, requiere internet
+"tts_backend": "edge",
+"edge_voice": "es-MX-DaliaNeural",
+
+# Piper — buena calidad, local, sin internet
 "tts_backend": "piper",
+"piper_model": "~/.local/share/piper/kristin.onnx",
 
 # Espeak — robótico pero siempre disponible
 "tts_backend": "espeak",
 ```
+
+### Voces Edge TTS disponibles
+
+| Voz | Idioma | Tipo |
+|-----|--------|------|
+| `es-MX-DaliaNeural` | Español México | Femenina, suave |
+| `es-ES-AlvaroNeural` | Español España | Masculina |
+| `es-ES-ElviraNeural` | Español España | Femenina |
+| `es-ES-XimenaNeural` | Español España | Femenina |
+| `en-GB-RyanNeural` | Inglés UK | Masculina, estilo Jarvis |
+| `en-US-AndrewNeural` | Inglés US | Masculina, cálida |
+| `en-US-ChristopherNeural` | Inglés US | Masculina, autoridad |
+
+Lista completa: `edge-tts --list-voices`
 
 ### Usar Ollama (alternativa local sin créditos)
 
@@ -172,12 +211,14 @@ El script usa un lockfile (`/tmp/voice_assistant.lock`) para saber si es la prim
 - Handy transcribe mejor en inglés que en español. Nombres técnicos (Catppuccin, Omarchy) pueden salir mal escritos, pero Kiro es lo suficientemente inteligente para interpretar errores de transcripción.
 - Cada pregunta por voz con backend "kiro" consume créditos de Kiro CLI.
 - Con backend "ollama" todo es local y gratuito, pero menos capaz.
+- Edge TTS requiere internet pero no tiene límite de uso ni necesita API key.
 - El tiempo de respuesta con Kiro es ~10-25s. Con Ollama local ~5-15s.
 
 ## Troubleshooting
 
 ### No se escucha la respuesta
-- Verifica que mpv funciona: `echo "test" | piper-tts --model ~/.local/share/piper/es_ES-davefx-medium.onnx --output_file /tmp/test.wav && mpv /tmp/test.wav`
+- Verifica Edge TTS: `edge-tts --voice "es-MX-DaliaNeural" --text "test" --write-media /tmp/test.wav && mpv /tmp/test.wav`
+- Si no hay internet, cambia a `"tts_backend": "piper"` en el script.
 
 ### Handy no transcribe
 - Verifica que está corriendo: `pgrep handy`
@@ -189,6 +230,12 @@ El script usa un lockfile (`/tmp/voice_assistant.lock`) para saber si es la prim
 
 ### Kiro no responde
 - Verifica autenticación: `kiro-cli chat --no-interactive "test"`
+
+### Respuesta cortada
+- Si la respuesta se corta, puede ser un problema de parsing. Verifica la salida cruda:
+  ```bash
+  kiro-cli chat --no-interactive --wrap=never "tu pregunta" 2>/dev/null | cat -A
+  ```
 
 ## Licencia
 
